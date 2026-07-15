@@ -106,6 +106,9 @@ This guide details how to deploy the **Backend on Render** and the **Frontend on
 5. Under **Environment Variables**, add:
    - **Key**: `VITE_API_URL`
    - **Value**: *Your Render backend URL followed by `/api`* (e.g. `https://ridevista-api.onrender.com/api`)
+
+   > [!IMPORTANT]
+   > **Do not forget the `/api` suffix!** The URL must look like `https://your-app.onrender.com/api`. If you omit `/api`, frontend API requests will fail with `404 Not Found` errors.
 6. Click **Deploy**.
 
 > [!NOTE]
