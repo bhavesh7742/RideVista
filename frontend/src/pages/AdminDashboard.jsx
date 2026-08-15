@@ -10,7 +10,8 @@ import {
   ShieldAlert, ShieldCheck, Building2, Users, UserCog, Car,
   ClipboardList, MessageSquare, LineChart, Settings, Check, X,
   MapPin, Phone, Mail, Search, Clock, Compass, Trash2,
-  Menu, LogOut, ChevronRight, CheckCircle2, ChevronDown, User
+  Menu, LogOut, ChevronRight, CheckCircle2, ChevronDown, User,
+  AlertCircle
 } from 'lucide-react';
 
 const AdminDashboard = () => {
