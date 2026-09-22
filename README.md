@@ -113,3 +113,108 @@ This guide details how to deploy the **Backend on Render** and the **Frontend on
 
 > [!NOTE]
 > The repository includes a `frontend/vercel.json` file. This handles automatic routing rewrites for single-page React router routes, preventing `404 Not Found` errors when refreshing dashboard pages.
+
+---
+
+## ☁️ AWS Production Deployment
+
+RideVista is deployed as a **single unified Docker container** on AWS using ECS Fargate, with the React frontend production build served directly by the Express backend.
+
+### 🚀 Live Demo
+
+[![RideVista Application](./ridevista-alb.png)](http://ridevista-app-alb-402262070.ap-south-1.elb.amazonaws.com/)
+
+**Live URL:** http://ridevista-app-alb-402262070.ap-south-1.elb.amazonaws.com/
+
+---
+
+### Architecture
+
+```
+Internet
+   ↓
+AWS Application Load Balancer  (ridevista-app-alb)
+   ↓
+Amazon ECS Fargate  (ridevista-cluster / ridevista-service)
+   ↓
+Single Docker Container  [port 5000]
+   ├── React frontend production build  (served as static files by Express)
+   └── Node.js / Express backend
+        ↓
+   MongoDB Atlas  (cloud database)
+        ↓
+   Gemini API  (AI city travel assistant)
+```
+
+All frontend routes (`/`, `/dashboard`, `/login`, etc.) are handled client-side by React Router. API routes (`/api/*`) are handled by Express. There is no Nginx in this deployment — Express does it all.
+
+---
+
+### AWS Infrastructure
+
+| Resource | Value |
+|---|---|
+| **AWS Region** | `ap-south-1` (Mumbai) |
+| **Amazon ECR** | Docker image repository |
+| **Amazon ECS** | Fargate (serverless containers) |
+| **ECS Cluster** | `ridevista-cluster` |
+| **ECS Service** | `ridevista-app-service` |
+| **Application Load Balancer** | `ridevista-app-alb` |
+| **Target Group** | `ridevista-app-tg` |
+| **Container Port** | `5000` |
+| **Health Check Endpoint** | `/api/health` |
+| **Database** | MongoDB Atlas |
+| **AI** | Google Gemini API |
+| **Logs** | Amazon CloudWatch |
+
+---
+
+### Deployment Flow
+
+```
+Local code changes
+   → docker buildx build --platform linux/amd64 -t ridevista-app:latest .
+   → docker push  →  Amazon ECR
+   → ECS Fargate pulls new image  →  Runs container on port 5000
+   → Application Load Balancer routes traffic
+   → Live application
+```
+
+### Deploying a New Version
+
+```bash
+# 1. Authenticate Docker with ECR
+aws ecr get-login-password --region ap-south-1 | \
+  docker login --username AWS --password-stdin \
+  <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com
+
+# 2. Build image for linux/amd64 (required for ECS Fargate)
+docker buildx build --platform linux/amd64 -t ridevista-app:latest .
+
+# 3. Tag and push to ECR
+docker tag ridevista-app:latest \
+  <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ridevista-backend:latest
+
+docker push \
+  <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ridevista-backend:latest
+
+# 4. Force ECS to pull the new image
+aws ecs update-service \
+  --cluster ridevista-cluster \
+  --service ridevista-service \
+  --force-new-deployment \
+  --region ap-south-1
+```
+
+### Required ECS Task Environment Variables
+
+The following environment variables must be set in the ECS Task Definition (never commit secrets to Git):
+
+```
+NODE_ENV=production
+PORT=5000
+MONGO_URI=mongodb+srv://bhaveshsiwana2004:Bhavesh5708@codtech-projects.1lgwrqw.mongodb.net/ridevista
+JWT_SECRET=Bhavesh_ridevista_2026_jodhpur
+GEMINI_API_KEY=<your Google AI Studio key>
+CLOUDINARY_URL=cloudinary://965745895182663:gK-ctUW2uB_CTbuFfL1vNp6sh1M@of3mnmu3
+```

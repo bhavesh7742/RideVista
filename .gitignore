@@ -60,3 +60,11 @@ coverage/
 
 # Vercel
 .vercel
+
+# AWS / Docker (do not commit credentials or local build artifacts)
+.aws/
+*.pem
+*.key
+
+# Docker local build cache (not needed in repo)
+# Note: Dockerfile IS committed — only local outputs are excluded

@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Node modules (reinstalled fresh inside each build stage)
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# Frontend build output (rebuilt inside Docker)
+frontend/dist
+
+# Environment / secrets (must come from ECS task definition, NOT baked into image)
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.local
+frontend/.env.development
+
+# Logs
+npm-debug.log*
+
+# Ephemeral uploads (not needed in image; Cloudinary handles persistence)
+backend/uploads
+
+# Seed scripts (not needed at runtime)
+backend/seed
+
+# Old individual Dockerfiles (root Dockerfile is the one we use)
+backend/Dockerfile
+frontend/Dockerfile
+frontend/nginx.conf
+
+# Misc
+README.md
+*.md

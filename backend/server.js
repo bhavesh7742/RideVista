@@ -22,7 +22,7 @@ const startServer = async () => {
     await seedAdmin();
 
     // Step 3: Start Express server
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`\n🚗 RideVista Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
       console.log(`📍 Health check: http://localhost:${PORT}/api/health\n`);
     });

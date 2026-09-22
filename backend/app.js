@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 // Import route files
 const authRoutes = require('./routes/authRoutes');
@@ -61,16 +62,26 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/reviews', reviewRoutes);
 
 // ---------------------
-// ERROR HANDLING
+// STATIC FILES + SPA FALLBACK
 // ---------------------
 
-// Handle 404 - Route not found (must be after all route definitions)
+// Serve the React production build from backend/public/
+// The Dockerfile copies frontend/dist → /app/public at build time
+app.use(express.static(path.join(__dirname, 'public')));
+
+// For every non-API GET route (e.g. /dashboard, /login, /)
+// send back React's index.html so React Router handles navigation client-side.
+// We use middleware without path string matching to completely avoid Express 5 path-to-regexp errors.
 app.use((req, res, next) => {
-  res.status(404).json({
-    success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`,
-  });
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    return res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
+  next();
 });
+
+// ---------------------
+// ERROR HANDLING
+// ---------------------
 
 // Global error handler (must be the LAST middleware)
 // Express identifies this as an error handler because it has 4 parameters
