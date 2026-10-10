@@ -65,60 +65,13 @@ npm run seed
 
 ---
 
-## 🌐 Production Deployment Guide
-
-This guide details how to deploy the **Backend on Render** and the **Frontend on Vercel**.
-
-### Part 1: Backend Deployment on Render
-
-1. Sign in to your [Render Dashboard](https://dashboard.render.com).
-2. Click **New** -> **Web Service**.
-3. Connect your Git repository containing the RideVista project.
-4. Set the following settings:
-   - **Name**: `ridevista-api` (or any custom name)
-   - **Region**: Select the region closest to your database hosting
-   - **Branch**: `main` (or your active branch)
-   - **Root Directory**: `backend`
-   - **Runtime**: `Node`
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-5. Click **Advanced** and add the following **Environment Variables**:
-   - `NODE_ENV`: `production`
-   - `PORT`: `10000` (or leave default, Render sets this automatically)
-   - `MONGO_URI`: *Your MongoDB connection string*
-   - `JWT_SECRET`: *A secure random string*
-   - `GEMINI_API_KEY`: *Your Google AI Studio Gemini API Key*
-   - `CLOUDINARY_URL`: *Your Cloudinary connection URL*
-6. Click **Create Web Service**. Once the build succeeds, copy the provided Web Service URL (e.g. `https://ridevista-api.onrender.com`).
-
----
-
-### Part 2: Frontend Deployment on Vercel
-
-1. Log in to [Vercel](https://vercel.com).
-2. Click **Add New** -> **Project**.
-3. Import your Git repository.
-4. Set the following settings:
-   - **Framework Preset**: `Vite` or `Other`
-   - **Root Directory**: `frontend`
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
-5. Under **Environment Variables**, add:
-   - **Key**: `VITE_API_URL`
-   - **Value**: *Your Render backend URL* (e.g. `https://ridevista-api.onrender.com`) followed by `/api` (e.g. `https://ridevista-api.onrender.com/api`)
-
-   > [!IMPORTANT]
-   > **Do not forget the `/api` suffix!** The URL must look like `https://your-app.onrender.com/api`. If you omit `/api`, frontend API requests will fail with `404 Not Found` errors.
-6. Click **Deploy**.
-
-> [!NOTE]
-> The repository includes a `frontend/vercel.json` file. This handles automatic routing rewrites for single-page React router routes, preventing `404 Not Found` errors when refreshing dashboard pages.
-
----
-
 ## ☁️ AWS Production Deployment
 
-RideVista is deployed as a **single unified Docker container** on AWS using ECS Fargate, with the React frontend production build served directly by the Express backend.
+RideVista is deployed as a **single unified Docker container** on AWS using ECS Fargate. The React frontend production build is bundled into the Docker image and served directly by the Express backend as static files — no separate frontend hosting service is required.
+
+**AWS Region:** `ap-south-1` (Mumbai)
+
+---
 
 ### 🚀 Live Demo
 
@@ -128,93 +81,359 @@ RideVista is deployed as a **single unified Docker container** on AWS using ECS 
 
 ---
 
-### Architecture
+### Architecture Overview
 
 ```
 Internet
-   ↓
-AWS Application Load Balancer  (ridevista-app-alb)
-   ↓
-Amazon ECS Fargate  (ridevista-cluster / ridevista-service)
-   ↓
-Single Docker Container  [port 5000]
-   ├── React frontend production build  (served as static files by Express)
-   └── Node.js / Express backend
-        ↓
-   MongoDB Atlas  (cloud database)
-        ↓
-   Gemini API  (AI city travel assistant)
+   |
+   v
+Internet-facing Application Load Balancer  (ridevista-app-alb)  :80
+   |
+   v
+Target Group  (ridevista-app-tg)  IP type
+   |
+   +-------------------------------+
+   |                               |
+   v                               v
+ECS Fargate Task              ECS Fargate Task
+Private Subnet (AZ-a)         Private Subnet (AZ-b)
+port 5000                     port 5000
+   |                               |
+   +---------------+---------------+
+                   |
+                   v
+             NAT Gateway
+                   |
+                   v
+          Internet Gateway
+                   |
+       +-----------+-----------+
+       |           |           |
+       v           v           v
+ MongoDB Atlas  Cloudinary  Gemini API
 ```
 
-All frontend routes (`/`, `/dashboard`, `/login`, etc.) are handled client-side by React Router. API routes (`/api/*`) are handled by Express. There is no Nginx in this deployment — Express does it all.
+The React frontend production build and all `/api/*` endpoints are served by the same Express application inside the container. There is no Nginx and no separate frontend hosting service.
 
 ---
 
-### AWS Infrastructure
+### AWS Infrastructure Summary
 
-| Resource | Value |
-|---|---|
-| **AWS Region** | `ap-south-1` (Mumbai) |
-| **Amazon ECR** | Docker image repository |
-| **Amazon ECS** | Fargate (serverless containers) |
-| **ECS Cluster** | `ridevista-cluster` |
-| **ECS Service** | `ridevista-app-service` |
-| **Application Load Balancer** | `ridevista-app-alb` |
-| **Target Group** | `ridevista-app-tg` |
-| **Container Port** | `5000` |
-| **Health Check Endpoint** | `/api/health` |
-| **Database** | MongoDB Atlas |
-| **AI** | Google Gemini API |
-| **Logs** | Amazon CloudWatch |
+| Component | Resource / Value | Purpose |
+|---|---|---|
+| **AWS Region** | `ap-south-1` (Mumbai) | All resources deployed here |
+| **Amazon ECR** | `ridevista-backend` repository | Private Docker image registry |
+| **ECS Cluster** | `ridevista-cluster` | Logical grouping of ECS workloads |
+| **ECS Service** | `ridevista-app-service` | Maintains running tasks, integrates with ALB |
+| **ECS Task Definition** | Blueprint for the container | Image, port, env vars, CPU/memory, logging |
+| **Compute** | AWS Fargate | Serverless — no EC2 instances to manage |
+| **ALB** | `ridevista-app-alb` | Internet-facing load balancer, HTTP :80 |
+| **Target Group** | `ridevista-app-tg` | IP type, port 5000, `/api/health` health check |
+| **Container Port** | `5000` | Express listens on this port |
+| **VPC** | Custom VPC | Isolated network for all AWS resources |
+| **Public Subnets** | `ap-south-1a`, `ap-south-1b` | ALB and NAT Gateway placement |
+| **Private Subnets** | `ap-south-1a`, `ap-south-1b` | ECS Fargate tasks — no public IPs |
+| **NAT Gateway** | In public subnet | Outbound internet for private ECS tasks |
+| **Database** | MongoDB Atlas | External managed cloud database |
+| **Image Storage** | Cloudinary | External CDN for vehicle/driver images |
+| **AI** | Google Gemini API | City travel assistant |
+| **Logs** | Amazon CloudWatch | Container stdout/stderr log streaming |
 
 ---
 
-### Deployment Flow
+### 1. Docker and Amazon ECR
 
-```
-Local code changes
-   → docker buildx build --platform linux/amd64 -t ridevista-app:latest .
-   → docker push  →  Amazon ECR
-   → ECS Fargate pulls new image  →  Runs container on port 5000
-   → Application Load Balancer routes traffic
-   → Live application
-```
+Amazon ECR (Elastic Container Registry) is the private Docker image registry used in this deployment. ECS Fargate pulls the container image from ECR when starting a task. ECR stores versioned images and integrates natively with ECS without additional authentication configuration at runtime.
 
-### Deploying a New Version
+The image is built for `linux/amd64` because ECS Fargate runs Linux containers on x86-64 hardware. Building without specifying the platform on an ARM machine (e.g., Apple Silicon or some Windows setups) produces an image that fails with `exec format error` on ECS.
+
+**Manual image deployment workflow:**
 
 ```bash
-# 1. Authenticate Docker with ECR
+# Step 1 — Authenticate Docker client with your ECR registry
+# This generates a temporary ECR login token (valid 12 hours)
 aws ecr get-login-password --region ap-south-1 | \
   docker login --username AWS --password-stdin \
   <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com
 
-# 2. Build image for linux/amd64 (required for ECS Fargate)
+# Step 2 — Build the image targeting linux/amd64
+# The multi-stage Dockerfile compiles the React frontend (Vite) in Stage 1
+# and packages it with the Express backend in Stage 2.
 docker buildx build --platform linux/amd64 -t ridevista-app:latest .
 
-# 3. Tag and push to ECR
+# Step 3 — Tag the local image with the full ECR repository URI
 docker tag ridevista-app:latest \
   <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ridevista-backend:latest
 
+# Step 4 — Push the image to ECR
 docker push \
   <AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ridevista-backend:latest
 
-# 4. Force ECS to pull the new image
+# Step 5 — Trigger a rolling deployment on ECS
+# ECS pulls the new image from ECR, starts a new task,
+# waits for the ALB health check to pass, then stops the old task.
 aws ecs update-service \
   --cluster ridevista-cluster \
-  --service ridevista-service \
+  --service ridevista-app-service \
   --force-new-deployment \
   --region ap-south-1
 ```
 
-### Required ECS Task Environment Variables
+---
 
-The following environment variables must be set in the ECS Task Definition (never commit secrets to Git):
+### 2. ECS Cluster
+
+**Cluster:** `ridevista-cluster`
+
+An ECS Cluster is the logical grouping of ECS services and tasks. This cluster uses **AWS Fargate** as the compute capacity provider. Fargate is serverless — there are no EC2 worker nodes to provision, patch, or scale. AWS manages the underlying infrastructure; you only define what the container needs (CPU, memory, image).
+
+---
+
+### 3. ECS Task Definition
+
+The Task Definition is the **blueprint** that describes how the RideVista container should run.
+
+| Configuration | Value |
+|---|---|
+| **Container image** | ECR URI (`ridevista-backend:latest`) |
+| **Container port** | `5000` |
+| **Network mode** | `awsvpc` (required for Fargate) |
+| **Logging** | Amazon CloudWatch Logs |
+| **Environment variables** | Set in Task Definition (see below) |
+
+**Key concepts:**
+
+| Term | Meaning |
+|---|---|
+| **Task Definition** | Blueprint — how the container should run |
+| **Task** | One running instance of a Task Definition |
+| **Service** | Maintains the desired number of running Tasks |
+
+**Environment variables** (set in Task Definition — never in source code or Git):
 
 ```
 NODE_ENV=production
 PORT=5000
-MONGO_URI=mongodb+srv://bhaveshsiwana2004:Bhavesh5708@codtech-projects.1lgwrqw.mongodb.net/ridevista
-JWT_SECRET=Bhavesh_ridevista_2026_jodhpur
+MONGO_URI=<your MongoDB Atlas connection string>
+JWT_SECRET=<your JWT secret key>
 GEMINI_API_KEY=<your Google AI Studio key>
-CLOUDINARY_URL=cloudinary://965745895182663:gK-ctUW2uB_CTbuFfL1vNp6sh1M@of3mnmu3
+CLOUDINARY_URL=<your Cloudinary URL>
 ```
+
+---
+
+### 4. ECS Service
+
+**Service:** `ridevista-app-service`
+
+The ECS Service is responsible for:
+- Launching tasks from the Task Definition
+- Maintaining the desired number of running tasks
+- Automatically replacing failed or unhealthy tasks
+- Integrating with the ALB Target Group so the load balancer routes traffic only to healthy tasks
+- Performing rolling deployments — a new task starts and passes health checks before the old task is stopped, ensuring zero downtime
+
+**Current deployment:** 1 running task (single-task configuration).
+
+#### Recommended Production Configuration
+
+For higher availability, running **2 tasks across 2 Availability Zones** is recommended:
+
+```
+Desired tasks: 2
+  Task 1 → Private Subnet ap-south-1a
+  Task 2 → Private Subnet ap-south-1b
+```
+
+This ensures the application remains available even if one Availability Zone experiences an issue.
+
+---
+
+### 5. ECS Service Auto Scaling
+
+> **Note:** Auto scaling is not currently configured. The following describes the recommended setup.
+
+Because this application runs on **Fargate**, the appropriate scaling mechanism is **ECS Service Auto Scaling** — not an EC2 Auto Scaling Group.
+
+**How ECS Service Auto Scaling works:**
+
+```
+ECS Service Auto Scaling
+    ↓
+changes desired task count
+    ↓
+Fargate launches or stops tasks automatically
+```
+
+**Recommended configuration:**
+
+| Setting | Value |
+|---|---|
+| Minimum tasks | 2 |
+| Desired tasks | 2 |
+| Maximum tasks | 4 |
+| Scaling metric | Average CPU utilization |
+
+**Important distinction for AWS interviews:**
+
+| | EC2 Auto Scaling Group | ECS Service Auto Scaling |
+|---|---|---|
+| **Scales** | EC2 instances | ECS Tasks |
+| **Uses** | Launch Template | Task Definition |
+| **Launch type** | ECS EC2 mode | ECS Fargate ✅ |
+| **Infrastructure** | You manage EC2 nodes | AWS manages infrastructure |
+
+---
+
+### 6. VPC and Subnet Architecture
+
+```
+VPC
+ |
+ +-- Public Subnets (ap-south-1a, ap-south-1b)
+ |      |
+ |      +-- Internet-facing ALB
+ |      +-- NAT Gateway
+ |                        \
+ |                   Internet Gateway
+ |
+ +-- Private Subnets (ap-south-1a, ap-south-1b)
+        |
+        +-- ECS Fargate Task 1  (ap-south-1a)
+        +-- ECS Fargate Task 2  (ap-south-1b)
+```
+
+| Subnet type | Used for | Internet route |
+|---|---|---|
+| **Public** | ALB, NAT Gateway | Direct route to Internet Gateway |
+| **Private** | ECS Fargate tasks | No direct inbound route — tasks have no public IPs |
+
+ECS tasks in private subnets can still reach the internet (MongoDB Atlas, Cloudinary, Gemini API) via the NAT Gateway.
+
+---
+
+### 7. NAT Gateway
+
+The NAT Gateway sits in a **public subnet** and allows ECS tasks in **private subnets** to make outbound internet connections — without exposing the tasks directly to inbound internet traffic.
+
+**Outbound flow from a private ECS task:**
+
+```
+ECS Fargate task (private subnet)
+    ↓
+Private route table  →  NAT Gateway
+    ↓
+Internet Gateway
+    ↓
+MongoDB Atlas / Cloudinary / Gemini API
+```
+
+| Component | Direction | Traffic |
+|---|---|---|
+| **ALB** | Inbound | User → application |
+| **NAT Gateway** | Outbound | Application → external APIs/services |
+
+Without the NAT Gateway, private ECS tasks cannot reach MongoDB Atlas, Cloudinary, or the Gemini API.
+
+---
+
+### 8. Application Load Balancer
+
+**ALB:** `ridevista-app-alb` — Internet-facing, HTTP listener on port **80**
+
+The ALB is the single stable public endpoint for the application. Its DNS name does not change when tasks restart or new tasks are deployed.
+
+```
+User
+ ↓
+ALB :80
+ ↓
+Listener rule (forward all)
+ ↓
+Target Group  →  Fargate Task :5000
+```
+
+---
+
+### 9. Target Group
+
+**Target Group:** `ridevista-app-tg`
+
+| Setting | Value |
+|---|---|
+| **Target type** | IP |
+| **Target port** | `5000` |
+| **Health check path** | `/api/health` |
+
+The target type is **IP** because Fargate tasks use `awsvpc` networking — each task gets its own private IP address and network interface. The ALB forwards traffic directly to `<task-private-IP>:5000`.
+
+The ALB periodically sends a GET request to `/api/health` on each registered task IP. Tasks that return a `200 OK` response receive traffic. Tasks that fail health checks are removed from rotation until they recover.
+
+---
+
+### 10. Security Groups
+
+Two security groups control network access:
+
+**ALB Security Group**
+
+| Rule | Protocol | Port | Source |
+|---|---|---|---|
+| Inbound | TCP | 80 | `0.0.0.0/0` (public internet) |
+
+**ECS Task Security Group**
+
+| Rule | Protocol | Port | Source |
+|---|---|---|---|
+| Inbound | TCP | 5000 | ALB Security Group |
+
+The ECS task security group allows inbound traffic on port 5000 **only from the ALB security group** — not from the public internet. Container port 5000 is never directly accessible from outside AWS.
+
+```
+Internet
+   ↓  (TCP 80)
+ALB Security Group
+   ↓
+ALB
+   ↓  (TCP 5000, source = ALB SG)
+ECS Task Security Group
+   ↓
+Container :5000
+```
+
+---
+
+### 11. Full Runtime Request Flow
+
+```
+User Browser
+    ↓  HTTP
+Internet
+    ↓
+Application Load Balancer :80
+    ↓
+ALB Listener → forward rule
+    ↓
+Target Group (ridevista-app-tg)
+    ↓
+Healthy Fargate Task  <private-ip>:5000
+    ↓
+Node.js / Express
+    ├── GET /            → serve React index.html (SPA entry point)
+    ├── GET /assets/*    → serve compiled React JS/CSS bundles
+    └── /api/*           → Express route handlers
+                              ↓
+                     MongoDB Atlas  (database queries)
+                     Cloudinary     (image uploads/retrieval)
+                     Gemini API     (AI travel assistant)
+                              ↓
+                        JSON response
+    ↓
+Fargate Task
+    ↓
+ALB
+    ↓
+User Browser
+```
+
+The React frontend production build (`/app/public/`) and the Express API (`/api/*`) are served by the same Node.js process inside the same container. The Express SPA fallback middleware returns `index.html` for any non-API GET request, allowing React Router to handle client-side navigation.
